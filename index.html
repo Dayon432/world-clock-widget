@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>World Markets & FX Sessions — AMS View</title>
+<style>
+  :root{
+    --bg: #0b0e14;
+    --card:#121723;
+    --muted:#8a93a6;
+    --text:#e6e9ef;
+    --green:#2ecc71;
+    --red:#ff6b6b;
+    --amber:#ffcc66;
+    --accent:#4da3ff;
+    --border:#1d2330;
+    --pill:#1b2333;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg:#f9f8f7;
+      --card:#ffffff;
+      --muted:#65738a;
+      --text:#1b2430;
+      --green:#1db954;
+      --red:#e74c3c;
+      --amber:#f5a623;
+      --accent:#2374e2;
+      --border:#e6e6e9;
+      --pill:#eef2f7;
+    }
+  }
+  html,body{height:100%}
+  body{
+    margin:0;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+    background:var(--bg); color:var(--text);
+  }
+  .wrap{
+    max-width:1100px; margin:24px auto; padding:0 16px;
+  }
+  .header{
+    display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:14px;
+  }
+  .title{font-size:20px; font-weight:700; letter-spacing:0.2px}
+  .subtitle{font-size:13px; color:var(--muted)}
+  .grid{
+    display:grid; gap:12px;
+    grid-template-columns: repeat( auto-fit, minmax(260px, 1fr) );
+  }
+  .card{
+    background:var(--card); border:1px solid var(--border);
+    border-radius:14px; padding:14px 14px 12px;
+    box-shadow: 0 1px 0 rgba(0,0,0,.05);
+  }
+  .row{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+  }
+  .name{font-weight:700; display:flex; gap:8px; align-items:center}
+  .tz{font-size:12px; color:var(--muted)}
+  .time{font-variant-numeric: tabular-nums; font-size:22px; font-weight:700; letter-spacing:.5px}
+  .meta{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px}
+  .pill{
+    font-size:12px; color:var(--text); background:var(--pill); border:1px solid var(--border);
+    padding:6px 8px; border-radius:999px; display:inline-flex; gap:6px; align-items:center;
+  }
+  .open{background:rgba(46, 204, 113, .12); border-color: rgba(46, 204, 113, .35)}
+  .closed{background:rgba(231, 76, 60, .12); border-color: rgba(231, 76, 60, .35)}
+  .soon{background:rgba(245, 166, 35, .12); border-color: rgba(245, 166, 35, .35)}
+  .hint{color:var(--muted); font-size:12px; margin-top:10px}
+  .section{margin-top:22px; margin-bottom:8px; font-weight:700; color:var(--accent); font-size:13px; letter-spacing:.3px}
+  .small{font-size:12px; color:var(--muted)}
+  .footer{margin-top:16px; text-align:center; color:var(--muted); font-size:12px}
+  .sr{position:absolute; left:-9999px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div>
+      <div class="title">World Markets & FX Sessions — Amsterdam View</div>
+      <div class="subtitle">Live status, countdown & local open/close translated to Europe/Amsterdam</div>
+    </div>
+    <div class="small" id="amsNow">—</div>
+  </div>
+
+  <div class="section">Equities / General Markets</div>
+  <div class="grid" id="markets"></div>
+
+  <div class="section">FX Sessions</div>
+  <div class="grid" id="fx"></div>
+
+  <div class="footer">Tip: embed this URL in Notion with <em>/embed</em>. Timezone/DST handled via Intl API.</div>
+</div>
+
+<script>
+// ---- Config ----
+const AMSTERDAM_TZ = "Europe/Amsterdam";
+const MARKETS = [
+  { name:"🇩🇪 Frankfurt (Xetra)", tz:"Europe/Berlin", open:"09:00", close:"17:30" },
+  { name:"🇬🇧 London (LSE/FX)",  tz:"Europe/London", open:"08:00", close:"17:00" },
+  { name:"🇺🇸 New York (NYSE/FX)", tz:"America/New_York", open:"09:30", close:"16:00" },
+  { name:"🇯🇵 Tokyo (TSE/FX)",   tz:"Asia/Tokyo", open:"09:00", close:"15:00" },
+  { name:"🇦🇺 Sydney (ASX/FX)",  tz:"Australia/Sydney", open:"10:00", close:"16:00" },
+];
+const FX = [
+  { name:"🕐 London FX Session", tz:"Europe/London", open:"08:00", close:"17:00" },
+  { name:"🕐 New York FX Session", tz:"America/New_York", open:"08:00", close:"17:00" },
+  { name:"🕐 Tokyo FX Session", tz:"Asia/Tokyo", open:"09:00", close:"18:00" },
+  { name:"🕐 Sydney FX Session", tz:"Australia/Sydney", open:"08:00", close:"17:00" },
+];
+
+const fmtTime = (d, tz) => new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:tz}).format(d);
+const fmtDate = (d, tz) => new Intl.DateTimeFormat('en-GB',{year:'numeric',month:'2-digit',day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false, timeZone:tz}).format(d);
+
+function dateAtLocalTime(baseDate, timeHHMM, tz){
+  const [hh, mm] = timeHHMM.split(":").map(Number);
+  const parts = new Intl.DateTimeFormat('en-CA', {timeZone: tz, year:'numeric', month:'2-digit', day:'2-digit'}).formatToParts(baseDate);
+  const y = parts.find(p=>p.type==='year').value;
+  const m = parts.find(p=>p.type==='month').value;
+  const d = parts.find(p=>p.type==='day').value;
+  const asIfUTC = new Date(`${y}-${m}-${d}T${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}:00.000Z`);
+  const offsetMin = - ( new Date(asIfUTC.toLocaleString('en-US', { timeZone: tz })) - asIfUTC ) / 60000;
+  const realInstant = new Date(asIfUTC.getTime() - offsetMin*60000);
+  return realInstant;
+}
+function isWeekend(d, tz){
+  const wd = new Intl.DateTimeFormat('en-GB',{weekday:'short', timeZone: tz}).format(d);
+  return wd === 'Sat' || wd === 'Sun';
+}
+function nextOpenClose(now, openInstant, closeInstant, tz){
+  if(isWeekend(now, tz)){
+    const temp = new Date(now);
+    for(let i=1;i<=7;i++){
+      const d = new Date(temp.getTime() + i*86400000);
+      const day = new Intl.DateTimeFormat('en-GB',{weekday:'short', timeZone: tz}).format(d);
+      if(day === 'Mon'){
+        const next = dateAtLocalTime(d, fmtTime(openInstant, tz), tz);
+        return { open:false, status:"🔴 CLOSED (Weekend)", next: next, label:"to Monday open" };
+      }
+    }
+  }
+  const nowInTz = new Date(now.toLocaleString('en-US', { timeZone: tz }));
+  if(nowInTz >= openInstant && nowInTz < closeInstant){
+    return { open:true, status:"🟢 OPEN", next: closeInstant, label:"to close" };
+  }else{
+    const beforeOpen = nowInTz < openInstant;
+    let targetDay = new Date(nowInTz);
+    if(!beforeOpen) targetDay = new Date(nowInTz.getTime() + 86400000);
+    while(isWeekend(targetDay, tz)){
+      targetDay = new Date(targetDay.getTime() + 86400000);
+    }
+    const target = dateAtLocalTime(targetDay, fmtTime(openInstant, tz), tz);
+    return { open:false, status:"🔴 CLOSED", next: target, label:"to open" };
+  }
+}
+function hhmmFromMs(ms){
+  const totalMin = Math.max(0, Math.floor(ms / 60000));
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return `${h}:${String(m).padStart(2,'0')}`;
+}
+
+function buildCard(item, containerId){
+  const container = document.getElementById(containerId);
+  const card = document.createElement('div');
+  card.className = 'card';
+  const top = document.createElement('div');
+  top.className='row';
+  const name = document.createElement('div');
+  name.className='name';
+  name.innerHTML = `<span>${item.name}</span><span class="tz">(${item.tz})</span>`;
+  const timeEl = document.createElement('div');
+  timeEl.className='time';
+  timeEl.textContent = '—:—';
+  top.appendChild(name); top.appendChild(timeEl);
+
+  const meta = document.createElement('div'); meta.className='meta';
+  const pillStatus = document.createElement('div'); pillStatus.className='pill closed'; pillStatus.textContent='—';
+  const pillOpen = document.createElement('div'); pillOpen.className='pill'; pillOpen.textContent='Open: —';
+  const pillClose = document.createElement('div'); pillClose.className='pill'; pillClose.textContent='Close: —';
+  const pillCountdown = document.createElement('div'); pillCountdown.className='pill'; pillCountdown.textContent='—';
+  meta.appendChild(pillStatus); meta.appendChild(pillOpen); meta.appendChild(pillClose); meta.appendChild(pillCountdown);
+
+  const hint = document.createElement('div'); hint.className='hint';
+  hint.textContent = 'All times shown in Europe/Amsterdam';
+
+  card.appendChild(top); card.appendChild(meta); card.appendChild(hint);
+  container.appendChild(card);
+
+  function tick(){
+    const now = new Date();
+    // clock (Amsterdam view)
+    timeEl.textContent = fmtTime(now, AMSTERDAM_TZ);
+
+    const openLocal = dateAtLocalTime(now, item.open, item.tz);
+    const closeLocal = dateAtLocalTime(now, item.close, item.tz);
+
+    pillOpen.textContent = 'Open: ' + fmtTime(openLocal, AMSTERDAM_TZ);
+    pillClose.textContent = 'Close: ' + fmtTime(closeLocal, AMSTERDAM_TZ);
+
+    const st = nextOpenClose(now, openLocal, closeLocal, item.tz);
+    pillStatus.textContent = st.status;
+    pillStatus.className = 'pill ' + (st.open ? 'open' : 'closed');
+
+    const nextMs = st.next - now;
+    const pretty = hhmmFromMs(nextMs);
+    pillCountdown.textContent = `${pretty} ${st.label}`;
+    const soon = nextMs <= 30*60*1000;
+    pillCountdown.className = 'pill ' + (soon ? 'soon' : '');
+  }
+  tick();
+  return setInterval(tick, 15000);
+}
+
+function init(){
+  const amsNow = ()=>{ document.getElementById('amsNow').textContent = 'Amsterdam: ' + fmtDate(new Date(), AMSTERDAM_TZ); };
+  amsNow();
+  setInterval(amsNow, 15000);
+
+  MARKETS.forEach(m => buildCard(m, 'markets'));
+  FX.forEach(s => buildCard(s, 'fx'));
+}
+init();
+</script>
+</body>
+</html>
